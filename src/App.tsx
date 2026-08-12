@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db, auth } from './firebase';
 import { 
   collection, doc, setDoc, onSnapshot, query, where, serverTimestamp, 
-  updateDoc, getDoc, getDocs, deleteDoc 
+  updateDoc, getDoc, getDocs, deleteDoc, orderBy, limit
 } from 'firebase/firestore';
 import { 
   Trophy, Camera, CheckCircle, LogOut, Users, PlusCircle, ShieldCheck, Edit, 
