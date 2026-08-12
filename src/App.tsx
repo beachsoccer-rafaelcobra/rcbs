@@ -77,6 +77,28 @@ function generateInviteCode(): string {
   return code;
 }
 
+const capitalizeWords = (str: string): string => {
+  if (!str) return str;
+  return str.split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+};
+
+const logAction = async (action: string, details: string) => {
+  if (!auth.currentUser) return;
+  try {
+    await setDoc(doc(db, 'logs', generateId()), {
+      action,
+      details,
+      userEmail: auth.currentUser.email,
+      uid: auth.currentUser.uid,
+      timestamp: serverTimestamp()
+    });
+  } catch (err) {
+    console.error('Failed to log action:', err);
+  }
+};
+
 const SUPER_ADMIN_EMAIL = 'beachsoccerrafaelcobra@gmail.com';
 
 enum OperationType {
@@ -542,6 +564,7 @@ export default function App() {
       };
       
       await setDoc(doc(db, 'invitations', inviteData.id), inviteData);
+      await logAction('CREATE_INVITE', `Gerou convite para ${newInviteEmail.trim()}`);
       setGeneratedInviteCode(code);
       setNewInviteName('');
       setNewInviteEmail('');
@@ -560,6 +583,7 @@ export default function App() {
         status: 'cancelled',
         updatedAt: serverTimestamp()
       });
+      await logAction('CANCEL_INVITE', `Cancelou convite ID: ${inviteId}`);
     } catch (err: any) {
       alert('Erro ao cancelar convite: ' + err.message);
     }
@@ -574,6 +598,7 @@ export default function App() {
         reviewedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+      await logAction('APPROVE_USER', `Aprovou usuário ${uid}`);
     } catch (err: any) {
       alert('Erro ao aprovar: ' + err.message);
     }
@@ -589,6 +614,7 @@ export default function App() {
         reviewedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+      await logAction('REJECT_USER', `Rejeitou usuário ${uid}`);
     } catch (err: any) {
       alert('Erro ao rejeitar: ' + err.message);
     }
@@ -605,6 +631,7 @@ export default function App() {
         role: 'admin',
         updatedAt: serverTimestamp()
       });
+      await logAction('PROMOTE_USER', `Promoveu usuário ${uid} a Admin`);
     } catch (err: any) {
       alert('Erro ao promover: ' + err.message);
     }
@@ -618,6 +645,7 @@ export default function App() {
         role: 'user',
         updatedAt: serverTimestamp()
       });
+      await logAction('DEMOTE_USER', `Rebaixou Admin ${uid} a Usuário comum`);
     } catch (err: any) {
       alert('Erro ao rebaixar: ' + err.message);
     }
@@ -631,6 +659,7 @@ export default function App() {
     if (!confirm('ATENÇÃO: Deletar esta conta é permanente. Continuar?')) return;
     try {
       await deleteDoc(doc(db, 'users', uid));
+      await logAction('DELETE_USER', `Deletou conta ${uid}`);
       alert('Conta deletada do sistema. (O acesso do Firebase Auth precisa ser removido manualmente no console do Firebase se necessário.)');
     } catch (err: any) {
       alert('Erro ao deletar: ' + err.message);
@@ -650,8 +679,24 @@ export default function App() {
         isVerified: true,
         updatedAt: serverTimestamp()
       });
+      await logAction('APPROVE_ATHLETE', `Aprovou atleta do time ID: ${teamId}`);
     } catch (err: any) {
       alert('Erro ao aprovar: ' + err.message);
+    }
+  };
+
+  const handleDeleteAthlete = async (teamId: string, playerName: string) => {
+    if (!isSuperAdmin) {
+      alert('Apenas o super admin pode deletar atletas.');
+      return;
+    }
+    if (!confirm(`ATENÇÃO: Deletar o atleta ${playerName} é permanente. Continuar?`)) return;
+    try {
+      await deleteDoc(doc(db, 'teams', teamId));
+      await logAction('DELETE_TEAM', `Deletou atleta ${playerName}`);
+      alert('Atleta deletado com sucesso.');
+    } catch (err: any) {
+      alert('Erro ao deletar: ' + err.message);
     }
   };
 
@@ -760,31 +805,39 @@ export default function App() {
         photoUrl = await compressImage(form.photo);
       }
 
+      const formattedTeamName = form.teamName.trim().toUpperCase();
+      const formattedState = form.state.trim().toUpperCase();
+      const formattedPlayer = capitalizeWords(form.player.trim());
+      const formattedNickname = capitalizeWords(form.nickname.trim());
+      const formattedCoach = capitalizeWords(form.coach.trim());
+
       if (editingId) {
         await updateDoc(doc(db, 'teams', editingId), {
-          teamName: form.teamName, coach: form.coach, playerName: form.player,
-          nickname: form.nickname, phone: form.phone, isWhatsapp: form.isWhatsapp,
+          teamName: formattedTeamName, coach: formattedCoach, playerName: formattedPlayer,
+          nickname: formattedNickname, phone: form.phone, isWhatsapp: form.isWhatsapp,
           birthDate: form.birthDate, cep: form.cep, address: form.address,
           addressNumber: form.addressNumber, neighborhood: form.neighborhood,
-          city: form.city, state: form.state, position: form.position,
+          city: form.city, state: formattedState, position: form.position,
           height: form.height, weight: form.weight, playerPhoto: photoUrl,
           updatedAt: serverTimestamp()
         });
+        await logAction('EDIT_TEAM', `Editou atleta ${formattedPlayer} (${formattedTeamName})`);
         alert('Ficha Atualizada!');
       } else {
         const teamId = generateId();
         await setDoc(doc(db, 'teams', teamId), {
           ownerId: firebaseUser.uid,
-          teamName: form.teamName, coach: form.coach, playerName: form.player,
-          nickname: form.nickname, phone: form.phone, isWhatsapp: form.isWhatsapp,
+          teamName: formattedTeamName, coach: formattedCoach, playerName: formattedPlayer,
+          nickname: formattedNickname, phone: form.phone, isWhatsapp: form.isWhatsapp,
           birthDate: form.birthDate, cep: form.cep, address: form.address,
           addressNumber: form.addressNumber, neighborhood: form.neighborhood,
-          city: form.city, state: form.state, position: form.position,
+          city: form.city, state: formattedState, position: form.position,
           height: form.height, weight: form.weight, playerPhoto: photoUrl,
           isVerified: false,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
+        await logAction('CREATE_TEAM', `Cadastrou atleta ${formattedPlayer} (${formattedTeamName})`);
         alert('Ficha Registrada com Sucesso! Aguardando aprovação.');
       }
 
@@ -839,6 +892,11 @@ export default function App() {
       rejeitados: allUsers.filter(u => u.status === 'rejected').length,
     };
   }, [invitations, allUsers]);
+
+  const uniqueClubs = useMemo(() => {
+    const clubs = new Set(teams.map(t => t.teamName?.trim().toUpperCase()).filter(Boolean));
+    return Array.from(clubs).sort();
+  }, [teams]);
 
   const isSuperAdmin = userData?.role === 'super_admin';
   const isAdminOrSuper = userData?.role === 'super_admin' || userData?.role === 'admin';
@@ -1155,7 +1213,7 @@ export default function App() {
                     className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${currentView === 'squad' ? 'bg-orange-500 shadow-sm' : 'hover:bg-emerald-700/50 text-emerald-100'}`}>
                     <Trophy size={18} /> Montar Time
                   </button>
-                  {isAdminOrSuper && (
+                  {isSuperAdmin && (
                     <button onClick={() => setCurrentView('gestao')}
                       className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${currentView === 'gestao' ? 'bg-orange-500 shadow-sm' : 'hover:bg-emerald-700/50 text-emerald-100'}`}>
                       <ShieldCheck size={18} /> Gestão
@@ -1204,7 +1262,7 @@ export default function App() {
               className={`flex-none px-3 py-2 rounded-lg font-bold transition-colors flex items-center justify-center gap-1 text-xs ${currentView === 'squad' ? 'bg-orange-500 text-white shadow-sm' : 'bg-emerald-800 text-emerald-200 hover:bg-emerald-700'}`}>
               <Trophy size={14} /> Montar Time
             </button>
-            {isAdminOrSuper && (
+            {isSuperAdmin && (
               <button onClick={() => setCurrentView('gestao')}
                 className={`flex-none px-3 py-2 rounded-lg font-bold transition-colors flex items-center justify-center gap-1 text-xs ${currentView === 'gestao' ? 'bg-orange-500 text-white shadow-sm' : 'bg-emerald-800 text-emerald-200 hover:bg-emerald-700'}`}>
                 <ShieldCheck size={14} /> Gestão
@@ -1237,9 +1295,12 @@ export default function App() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       <div>
                         <label className="block text-xs uppercase font-bold text-stone-500 mb-1.5 ml-1">Clube / Time</label>
-                        <input className="w-full bg-stone-50 border border-stone-200 p-3 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all font-medium"
-                          placeholder="Ex: Caiçara FC" value={form.teamName}
-                          onChange={(e) => setForm({ ...form, teamName: e.target.value })} required />
+                        <input className="w-full bg-stone-50 border border-stone-200 p-3 rounded-xl focus:ring-2 focus:ring-orange-500 focus:bg-white outline-none transition-all font-medium uppercase"
+                          placeholder="Ex: Caiçara FC" value={form.teamName} list="clubs-list"
+                          onChange={(e) => setForm({ ...form, teamName: e.target.value.toUpperCase() })} required />
+                        <datalist id="clubs-list">
+                          {uniqueClubs.map(club => <option key={club as string} value={club as string} />)}
+                        </datalist>
                       </div>
                       <div>
                         <label className="block text-xs uppercase font-bold text-stone-500 mb-1.5 ml-1">Nome do Treinador</label>
@@ -1583,6 +1644,12 @@ export default function App() {
                                 <Edit size={14} /> Editar Ficha
                               </button>
                             )}
+                            {isSuperAdmin && (
+                              <button onClick={(e) => { e.stopPropagation(); handleDeleteAthlete(t.id, t.playerName || 'Atleta'); }}
+                                className="w-full bg-white text-red-600 font-bold py-2.5 rounded-xl border-2 border-red-100 hover:bg-red-50 hover:border-red-200 transition-colors text-xs flex items-center justify-center gap-2 mt-2">
+                                <Trash2 size={14} /> Excluir
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1666,6 +1733,12 @@ export default function App() {
                                       <button onClick={(e) => { e.stopPropagation(); handleEdit(t); }}
                                         className="bg-white text-emerald-700 font-bold px-3 py-1.5 rounded-lg border border-emerald-100 hover:bg-emerald-50 transition-colors text-xs flex items-center justify-center gap-1 shadow-sm">
                                         <Edit size={14} /> Editar
+                                      </button>
+                                    )}
+                                    {isSuperAdmin && (
+                                      <button onClick={(e) => { e.stopPropagation(); handleDeleteAthlete(t.id, t.playerName || 'Atleta'); }}
+                                        className="bg-white text-red-600 font-bold px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-50 transition-colors text-xs flex items-center justify-center gap-1 shadow-sm">
+                                        <Trash2 size={14} /> Excluir
                                       </button>
                                     )}
                                   </div>

@@ -9,8 +9,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
+    function isSuperAdmin() {
       return isAuthenticated() && request.auth.token.email == 'beachsoccerrafaelcobra@gmail.com';
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || (isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
     function incoming() {
@@ -81,23 +85,28 @@ service cloud.firestore {
 
     match /users/{userId} {
       // Usuário pode ler seus próprios dados; Super Admin pode ler todos
-      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
       
       // Qualquer usuário recém-autenticado pode criar seu próprio documento (signup)
       allow create: if isAuthenticated() && request.auth.uid == userId;
       
       // SOMENTE o Super Admin pode atualizar (aceitar/rejeitar) e excluir usuários
-      allow update, delete: if isAdmin();
+      allow update, delete: if isSuperAdmin();
     }
 
     match /invitations/{inviteId} {
       allow read: if true;
       
       // Super admin pode editar convites. Usuário pode apenas marcar o convite como "used" durante o cadastro
-      allow update: if isAdmin() || (isAuthenticated() && incoming().status == 'used' && incoming().usedBy == request.auth.uid);
+      allow update: if isSuperAdmin() || (isAuthenticated() && incoming().status == 'used' && incoming().usedBy == request.auth.uid);
       
       // Apenas Super Admin cria ou deleta convites
-      allow create, delete: if isAdmin();
+      allow create, delete: if isSuperAdmin();
+    }
+    
+    match /logs/{logId} {
+      allow create: if isAuthenticated(); // Qualquer usuário logado pode registrar ações (sistema que cria)
+      allow read, update, delete: if isSuperAdmin(); // Só Super Admin vê logs
     }
 
     match /teams/{teamId} {
@@ -109,7 +118,7 @@ service cloud.firestore {
         ||
         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['isVerified', 'updatedAt']) && incoming().isVerified is bool && incoming().updatedAt == request.time)
       );
-      allow delete: if isAuthenticated() && isValidId(teamId) && (isOwner(existing().ownerId) || isAdmin());
+      allow delete: if isAuthenticated() && isValidId(teamId) && (isOwner(existing().ownerId) || isSuperAdmin());
     }
   }
 }
