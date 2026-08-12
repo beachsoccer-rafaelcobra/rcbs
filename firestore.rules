@@ -6,11 +6,11 @@ service cloud.firestore {
     }
 
     function isAuthenticated() {
-      return request.auth != null && request.auth.token.email_verified == true;
+      return request.auth != null;
     }
 
     function isAdmin() {
-      return isAuthenticated() && request.auth.token.email == 'allan.muniz88@gmail.com';
+      return isAuthenticated() && request.auth.token.email == 'beachsoccerrafaelcobra@gmail.com';
     }
 
     function incoming() {
@@ -77,6 +77,27 @@ service cloud.firestore {
         && data.createdAt == existing().createdAt
         && data.updatedAt == request.time
         && (!('playerPhoto' in data) || (data.playerPhoto is string && data.playerPhoto.size() <= 800000));
+    }
+
+    match /users/{userId} {
+      // Usuário pode ler seus próprios dados; Super Admin pode ler todos
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      
+      // Qualquer usuário recém-autenticado pode criar seu próprio documento (signup)
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      // SOMENTE o Super Admin pode atualizar (aceitar/rejeitar) e excluir usuários
+      allow update, delete: if isAdmin();
+    }
+
+    match /invitations/{inviteId} {
+      allow read: if true;
+      
+      // Super admin pode editar convites. Usuário pode apenas marcar o convite como "used" durante o cadastro
+      allow update: if isAdmin() || (isAuthenticated() && incoming().status == 'used' && incoming().usedBy == request.auth.uid);
+      
+      // Apenas Super Admin cria ou deleta convites
+      allow create, delete: if isAdmin();
     }
 
     match /teams/{teamId} {
