@@ -221,6 +221,15 @@ interface InvitationData {
   createdAt?: any;
 }
 
+interface LogData {
+  id: string;
+  action: string;
+  details: string;
+  userEmail: string;
+  uid: string;
+  timestamp: any;
+}
+
 type AppView = 'login' | 'request-access' | 'pending-approval' | 'rejected' | 
                'galeria' | 'cadastro' | 'squad' | 'gestao';
 
@@ -252,6 +261,7 @@ export default function App() {
   const [teams, setTeams] = useState<PlayerData[]>([]);
   const [invitations, setInvitations] = useState<InvitationData[]>([]);
   const [allUsers, setAllUsers] = useState<UserData[]>([]);
+  const [logs, setLogs] = useState<LogData[]>([]);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -264,7 +274,7 @@ export default function App() {
   const [newInviteName, setNewInviteName] = useState('');
   const [newInviteEmail, setNewInviteEmail] = useState('');
   const [generatedInviteCode, setGeneratedInviteCode] = useState<string | null>(null);
-  const [manageTab, setManageTab] = useState<'convites' | 'pendentes' | 'aprovados' | 'rejeitados'>('pendentes');
+  const [manageTab, setManageTab] = useState<'convites' | 'pendentes' | 'aprovados' | 'rejeitados' | 'logs'>('pendentes');
   
   const [form, setForm] = useState<FormData>({
     teamName: '', coach: '', player: '', nickname: '', phone: '', isWhatsapp: false,
@@ -408,6 +418,18 @@ export default function App() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data: UserData[] = snapshot.docs.map(d => ({ uid: d.id, ...d.data() } as UserData));
       setAllUsers(data.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    });
+    return () => { unsubscribe(); };
+  }, [userData]);
+
+  // Logs (só super admin)
+  useEffect(() => {
+    if (!userData || userData.role !== 'super_admin') return;
+    
+    const q = query(collection(db, 'logs'), orderBy('timestamp', 'desc'), limit(100));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: LogData[] = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as LogData));
+      setLogs(data);
     });
     return () => { unsubscribe(); };
   }, [userData]);
@@ -1994,7 +2016,53 @@ export default function App() {
                       {manageCounts.rejeitados}
                     </span>
                   </button>
+                  {isSuperAdmin && (
+                    <button onClick={() => setManageTab('logs')}
+                      className={`flex-1 min-w-[140px] px-4 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                        manageTab === 'logs' 
+                          ? 'bg-stone-800 text-white shadow-md' 
+                          : 'text-stone-600 hover:bg-stone-50'
+                      }`}>
+                      <Activity size={16} /> Logs de Auditoria
+                    </button>
+                  )}
                 </div>
+
+                {/* ABA: LOGS */}
+                {manageTab === 'logs' && isSuperAdmin && (
+                  <div className="bg-white rounded-3xl border border-stone-200 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-stone-100">
+                      <h3 className="text-xl font-black text-stone-900 flex items-center gap-2">
+                        <Activity className="text-blue-500" size={24} />
+                        Histórico do Sistema
+                      </h3>
+                      <p className="text-stone-500 text-sm mt-1">Últimas ações realizadas (criação, edição e exclusão de fichas ou usuários).</p>
+                    </div>
+                    {logs.length === 0 ? (
+                      <div className="p-12 text-center">
+                        <Activity size={48} className="mx-auto text-stone-200 mb-3" />
+                        <p className="text-stone-500 font-bold">Nenhum log registrado ainda</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-stone-100 max-h-[600px] overflow-y-auto">
+                        {logs.map(log => (
+                          <div key={log.id} className="p-5 hover:bg-stone-50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex-1">
+                              <p className="font-black text-stone-800 text-sm uppercase tracking-wider">{log.action}</p>
+                              <p className="text-stone-600 font-medium text-sm mt-0.5">{log.details}</p>
+                            </div>
+                            <div className="text-left md:text-right flex-shrink-0">
+                              <p className="font-mono text-xs text-stone-900 font-bold bg-stone-100 px-2 py-1 rounded inline-block mb-1">{log.userEmail}</p>
+                              <p className="text-[11px] text-stone-400 font-medium block">
+                                {log.timestamp?.seconds ? new Date(log.timestamp.seconds * 1000).toLocaleString('pt-BR') : 'Agora'}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* ABA: PENDENTES */}
                 {manageTab === 'pendentes' && (
