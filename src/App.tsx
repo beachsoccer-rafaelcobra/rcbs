@@ -257,6 +257,7 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selectedSquadPlayers, setSelectedSquadPlayers] = useState<PlayerData[]>([]);
   const [squadSearchTerm, setSquadSearchTerm] = useState('');
+  const [squadCategories, setSquadCategories] = useState<string[]>(['sub17', 'sub20', 'profissional']);
   const [activeCategory, setActiveCategory] = useState<'todos' | 'sub17' | 'sub20' | 'profissional'>('todos');
   
   // New invite form
@@ -341,7 +342,15 @@ export default function App() {
     
     const qVerified = query(collection(db, 'teams'), where('isVerified', '==', true));
     const unsubscribeVerified = onSnapshot(qVerified, (snapshot) => {
-      const verifiedTeams: PlayerData[] = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PlayerData));
+      const verifiedTeams: PlayerData[] = snapshot.docs.map(d => {
+        const data = d.data();
+        return { 
+          ...data,
+          id: d.id,
+          teamName: data.teamName?.toUpperCase() || '',
+          state: data.state?.toUpperCase() || ''
+        } as PlayerData;
+      });
       setTeams(prev => {
         const others = prev.filter(p => !p.isVerified);
         const merged = [...verifiedTeams, ...others];
@@ -361,7 +370,15 @@ export default function App() {
       : query(collection(db, 'teams'), where('ownerId', '==', firebaseUser.uid));
 
     const unsubscribe = onSnapshot(qOwnedOrAdmin, (snapshot) => {
-      const docsData: PlayerData[] = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PlayerData));
+      const docsData: PlayerData[] = snapshot.docs.map(d => {
+        const data = d.data();
+        return { 
+          ...data,
+          id: d.id,
+          teamName: data.teamName?.toUpperCase() || '',
+          state: data.state?.toUpperCase() || ''
+        } as PlayerData;
+      });
       setTeams(prev => {
         const others = prev.filter(p => p.ownerId !== firebaseUser.uid && !isAdminUser);
         const merged = [...others, ...docsData];
@@ -685,9 +702,9 @@ export default function App() {
     }
   };
 
-  const handleDeleteAthlete = async (teamId: string, playerName: string) => {
-    if (!isSuperAdmin) {
-      alert('Apenas o super admin pode deletar atletas.');
+  const handleDeleteAthlete = async (teamId: string, playerName: string, ownerId?: string) => {
+    if (!isSuperAdmin && ownerId !== firebaseUser?.uid) {
+      alert('Você só pode deletar as fichas que você mesmo cadastrou.');
       return;
     }
     if (!confirm(`ATENÇÃO: Deletar o atleta ${playerName} é permanente. Continuar?`)) return;
@@ -701,7 +718,10 @@ export default function App() {
   };
 
   const handleEdit = (team: PlayerData) => {
-    if (userData?.role !== 'super_admin' && userData?.role !== 'admin') return;
+    if (!isSuperAdmin && (!canManageAthletes || team.ownerId !== firebaseUser?.uid)) {
+      alert('Apenas o super admin ou o criador da ficha podem editá-la.');
+      return;
+    }
     setForm({
       teamName: team.teamName || '', coach: team.coach || '',
       player: team.playerName || '', nickname: team.nickname || '',
@@ -1638,14 +1658,14 @@ export default function App() {
                               </p>
                             )}
 
-                            {canManageAthletes && t.ownerId === firebaseUser?.uid && (
+                            {(isSuperAdmin || (canManageAthletes && t.ownerId === firebaseUser?.uid)) && (
                               <button onClick={(e) => { e.stopPropagation(); handleEdit(t); }}
                                 className="w-full bg-white text-emerald-700 font-bold py-2.5 rounded-xl border-2 border-emerald-100 hover:bg-emerald-50 hover:border-emerald-200 transition-colors text-xs flex items-center justify-center gap-2">
                                 <Edit size={14} /> Editar Ficha
                               </button>
                             )}
-                            {isSuperAdmin && (
-                              <button onClick={(e) => { e.stopPropagation(); handleDeleteAthlete(t.id, t.playerName || 'Atleta'); }}
+                            {(isSuperAdmin || (canManageAthletes && t.ownerId === firebaseUser?.uid)) && (
+                              <button onClick={(e) => { e.stopPropagation(); handleDeleteAthlete(t.id, t.playerName || 'Atleta', t.ownerId); }}
                                 className="w-full bg-white text-red-600 font-bold py-2.5 rounded-xl border-2 border-red-100 hover:bg-red-50 hover:border-red-200 transition-colors text-xs flex items-center justify-center gap-2 mt-2">
                                 <Trash2 size={14} /> Excluir
                               </button>
@@ -1729,14 +1749,14 @@ export default function App() {
                                         <ShieldCheck size={14} /> Aprovar
                                       </button>
                                     )}
-                                    {canManageAthletes && t.ownerId === firebaseUser?.uid && (
+                                    {(isSuperAdmin || (canManageAthletes && t.ownerId === firebaseUser?.uid)) && (
                                       <button onClick={(e) => { e.stopPropagation(); handleEdit(t); }}
                                         className="bg-white text-emerald-700 font-bold px-3 py-1.5 rounded-lg border border-emerald-100 hover:bg-emerald-50 transition-colors text-xs flex items-center justify-center gap-1 shadow-sm">
                                         <Edit size={14} /> Editar
                                       </button>
                                     )}
-                                    {isSuperAdmin && (
-                                      <button onClick={(e) => { e.stopPropagation(); handleDeleteAthlete(t.id, t.playerName || 'Atleta'); }}
+                                    {(isSuperAdmin || (canManageAthletes && t.ownerId === firebaseUser?.uid)) && (
+                                      <button onClick={(e) => { e.stopPropagation(); handleDeleteAthlete(t.id, t.playerName || 'Atleta', t.ownerId); }}
                                         className="bg-white text-red-600 font-bold px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-50 transition-colors text-xs flex items-center justify-center gap-1 shadow-sm">
                                         <Trash2 size={14} /> Excluir
                                       </button>
@@ -1790,8 +1810,33 @@ export default function App() {
                           onChange={(e) => setSquadSearchTerm(e.target.value)} />
                       </div>
                     </div>
+                    <div className="mb-3 px-2 flex gap-3 text-xs font-bold text-stone-500">
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="checkbox" checked={squadCategories.includes('sub17')} onChange={(e) => {
+                          if (e.target.checked) setSquadCategories([...squadCategories, 'sub17']);
+                          else setSquadCategories(squadCategories.filter(c => c !== 'sub17'));
+                        }} className="accent-blue-500" /> Sub-17
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="checkbox" checked={squadCategories.includes('sub20')} onChange={(e) => {
+                          if (e.target.checked) setSquadCategories([...squadCategories, 'sub20']);
+                          else setSquadCategories(squadCategories.filter(c => c !== 'sub20'));
+                        }} className="accent-purple-500" /> Sub-20
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="checkbox" checked={squadCategories.includes('profissional')} onChange={(e) => {
+                          if (e.target.checked) setSquadCategories([...squadCategories, 'profissional']);
+                          else setSquadCategories(squadCategories.filter(c => c !== 'profissional'));
+                        }} className="accent-orange-500" /> Profis.
+                      </label>
+                    </div>
                     <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-                      {filteredTeams.filter(t => !squadSearchTerm || (t.playerName?.toLowerCase().includes(squadSearchTerm.toLowerCase()) ?? false)).map(t => (
+                      {filteredTeams.filter(t => {
+                        const age = calculateAge(t.birthDate);
+                        const cat = getCategoryFromAge(age);
+                        if (!cat || !squadCategories.includes(cat)) return false;
+                        return !squadSearchTerm || (t.playerName?.toLowerCase().includes(squadSearchTerm.toLowerCase()) ?? false);
+                      }).map(t => (
                         <div key={t.id}
                           className="flex items-center justify-between p-3 bg-stone-50 hover:bg-stone-100 rounded-xl cursor-pointer border border-transparent hover:border-stone-200 transition-colors"
                           onClick={() => {
@@ -1805,7 +1850,13 @@ export default function App() {
                             </div>
                             <div>
                               <p className="font-bold text-sm text-stone-800 leading-tight">{t.playerName}</p>
-                              <p className="text-[10px] uppercase font-bold text-stone-400">{t.position || 'Sem POS'}</p>
+                              <p className="text-[10px] uppercase font-bold text-stone-400 flex gap-1 items-center">
+                                <span>{t.position || 'Sem POS'}</span>
+                                <span>•</span>
+                                <span className={getCategoryFromAge(calculateAge(t.birthDate)) === 'sub17' ? 'text-blue-500' : getCategoryFromAge(calculateAge(t.birthDate)) === 'sub20' ? 'text-purple-500' : 'text-orange-500'}>
+                                  {getCategoryFromAge(calculateAge(t.birthDate))?.toUpperCase() || '-'}
+                                </span>
+                              </p>
                             </div>
                           </div>
                           <PlusCircle size={18} className="text-emerald-600 opacity-50" />
